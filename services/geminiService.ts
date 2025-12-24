@@ -1,7 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 import { MindMapData } from "../types";
+interface ImportMetaEnv {
+  readonly GEMINI_API_KEY: string;
+  // 在这里添加其他环境变量...
+}
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+const ai = new GoogleGenAI({ apiKey: import.meta.env.GEMINI_API_KEY });
 
 const SYSTEM_PROMPT = `
 You are an expert at structuring disorganized spoken thoughts into clear, logical, hierarchical mind maps.
