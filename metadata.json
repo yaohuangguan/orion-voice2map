@@ -1,0 +1,8 @@
+{
+  "name": "Orion Voice2Map",
+  "description": "Transform your stream of consciousness into structured mind maps instantly using Gemini 3 Pro.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
