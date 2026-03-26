@@ -73,19 +73,19 @@ export default function App() {
   };
 
   const handleRecordingComplete = async (blob: Blob) => {
-    // Check Limits
-    if (!user && usageCount >= 1) {
-      setAuthMode('signup');
+    // Require Login
+    if (!user || !token) {
+      setAuthMode('login');
       setAuthForced(true); // User must interact with modal
       setIsAuthOpen(true);
-      setError(t.limit_reached_desc);
+      setError("Please login to use this service.");
       return;
     }
 
     setStatus('processing');
     setError(null);
     try {
-      const data = await generateMindMapFromAudio(blob);
+      const data = await generateMindMapFromAudio(blob, token);
       setMapData(data);
       setStatus('success');
       saveMap(data); // Auto-save new maps
@@ -232,6 +232,7 @@ export default function App() {
             <MindMapVisualizer 
                 data={mapData} 
                 language={language}
+                token={token}
                 onExportImage={() => {}} // Handled inside Visualizer via ref
                 onExportMarkdown={() => {}}
                 onSave={handleSaveMap}

@@ -22,6 +22,7 @@ import { downloadImage, generateMarkdown, generateMermaid, downloadFile } from '
 interface MindMapVisualizerProps {
   data: MindMapData | null;
   language: Language;
+  token: string | null;
   onExportImage: () => void;
   onExportMarkdown: () => void;
   onSave: (data: MindMapData) => void;
@@ -35,7 +36,7 @@ export const MindMapVisualizer: React.FC<MindMapVisualizerProps> = (props) => {
     )
 }
 
-const MindMapVisualizerContent: React.FC<MindMapVisualizerProps> = ({ data, language, onSave }) => {
+const MindMapVisualizerContent: React.FC<MindMapVisualizerProps> = ({ data, language, token, onSave }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,8 +70,12 @@ const MindMapVisualizerContent: React.FC<MindMapVisualizerProps> = ({ data, lang
   }, [setNodes, setEdges]);
 
   const onEnrichSearch = useCallback(async (id: string, label: string) => {
+      if (!token) {
+          alert("Please login to use enrichment features.");
+          return;
+      }
       try {
-          const result = await enrichWithGoogleSearch(label);
+          const result = await enrichWithGoogleSearch(label, token);
           setNodes((nds) => nds.map((n) => {
               if (n.id === id) {
                   const existingDetails = n.data.details ? n.data.details + '\n\n' : '';
@@ -92,6 +97,10 @@ const MindMapVisualizerContent: React.FC<MindMapVisualizerProps> = ({ data, lang
   }, [setNodes]);
 
   const onEnrichMaps = useCallback(async (id: string, label: string) => {
+    if (!token) {
+        alert("Please login to use enrichment features.");
+        return;
+    }
     try {
         let location = undefined;
         try {
@@ -103,7 +112,7 @@ const MindMapVisualizerContent: React.FC<MindMapVisualizerProps> = ({ data, lang
             console.warn("Geolocation denied or failed, searching globally.");
         }
 
-        const result = await enrichWithGoogleMaps(label, location);
+        const result = await enrichWithGoogleMaps(label, token, location);
         setNodes((nds) => nds.map((n) => {
             if (n.id === id) {
                 const existingDetails = n.data.details ? n.data.details + '\n\n' : '';
@@ -122,7 +131,7 @@ const MindMapVisualizerContent: React.FC<MindMapVisualizerProps> = ({ data, lang
     } catch (error) {
         alert("Failed to fetch maps data.");
     }
-}, [setNodes]);
+}, [token, setNodes]);
 
   const onAddChild = useCallback((parentId: string) => {
       const newId = crypto.randomUUID();

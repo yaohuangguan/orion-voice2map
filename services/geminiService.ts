@@ -1,69 +1,31 @@
-import { GoogleGenAI } from "@google/genai";
 import { MindMapData } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const BACKEND_URL = 'https://bananaboom-api-242273127238.asia-east1.run.app/api/voice2map';
 
-const SYSTEM_PROMPT = `
-You are an expert at structuring disorganized spoken thoughts into clear, logical, hierarchical mind maps.
-Your goal is to extract entities, actions, and relationships from the audio transcript and organize them into a strict JSON tree structure.
-
-Rules:
-1. Identify the main topic as the root node.
-2. Group related concepts into branches.
-3. Keep labels concise (2-5 words).
-4. Add 'details' if there is specific extra info (dates, prices, specific items).
-5. Assign a 'category' to each node from these options: 'idea' (general concept), 'task' (action item), 'question' (uncertainty), 'fact' (statement).
-6. Assign a unique string ID to every node.
-7. Return ONLY the JSON object.
-`;
-
-export const generateMindMapFromAudio = async (audioBlob: Blob): Promise<MindMapData> => {
+export const generateMindMapFromAudio = async (audioBlob: Blob, token: string): Promise<MindMapData> => {
   try {
     const base64Audio = await blobToBase64(audioBlob);
 
-    // Using gemini-3-pro-preview for advanced reasoning (thinking) capabilities
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: 'audio/mp3', 
-              data: base64Audio
-            }
-          },
-          {
-            text: "Listen to this audio. Structurally organize these thoughts into a Mind Map JSON with a 'root' object containing 'id', 'label', 'details', 'category', and 'children' array."
-          }
-        ]
+    const response = await fetch(`${BACKEND_URL}/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
       },
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: 'application/json',
-        thinkingConfig: {
-          thinkingBudget: 32768 
-        }
-      }
+      body: JSON.stringify({ audioBase64: base64Audio })
     });
 
-    const jsonText = response.text;
-    if (!jsonText) throw new Error("No text response from Gemini");
-
-    const parsedData = JSON.parse(jsonText) as MindMapData;
+    const result = await response.json();
     
-    // Basic validation
-    if (!parsedData.root) {
-      throw new Error("Invalid JSON structure: missing root");
+    if (!response.ok) {
+      throw new Error(result.msg || 'AI model failed to process audio.');
     }
 
-    // Recursively add timestamps if missing
-    const augmentNode = (node: any) => {
-      if (!node.createdAt) node.createdAt = Date.now();
-      if (node.children) node.children.forEach(augmentNode);
-    };
-    augmentNode(parsedData.root);
+    if (!result.success || !result.data) {
+      throw new Error("Invalid response from server");
+    }
 
-    return parsedData;
+    return result.data;
 
   } catch (error) {
     console.error("Gemini processing error:", error);
@@ -78,67 +40,48 @@ export interface EnrichmentResult {
   links: { title: string; url: string }[];
 }
 
-export const enrichWithGoogleSearch = async (query: string): Promise<EnrichmentResult> => {
+export const enrichWithGoogleSearch = async (query: string, token: string): Promise<EnrichmentResult> => {
   try {
-    // gemini-3-flash-preview allows googleSearch tool
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Search for "${query}". Provide a 1-sentence summary of key facts.`,
-      config: {
-        tools: [{ googleSearch: {} }]
-      }
+    const response = await fetch(`${BACKEND_URL}/enrich-search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ query })
     });
 
-    const text = response.text || "";
-    // Extract grounding URLs
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const links = chunks
-      .filter((c: any) => c.web?.uri)
-      .map((c: any) => ({ title: c.web.title || 'Source', url: c.web.uri }));
+    const result = await response.json();
+    
+    if (!response.ok) {
+        throw new Error(result.msg || 'Search enrichment failed.');
+    }
 
-    return { text, links };
+    return result.data;
   } catch (e) {
     console.error("Search Grounding Error", e);
     throw e;
   }
 };
 
-export const enrichWithGoogleMaps = async (query: string, userLocation?: { lat: number, lng: number }): Promise<EnrichmentResult> => {
+export const enrichWithGoogleMaps = async (query: string, token: string, userLocation?: { lat: number, lng: number }): Promise<EnrichmentResult> => {
   try {
-    // gemini-2.5-flash allows googleMaps tool
-    const config: any = {
-      tools: [{ googleMaps: {} }]
-    };
+    const response = await fetch(`${BACKEND_URL}/enrich-maps`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ query, userLocation })
+    });
 
-    if (userLocation) {
-        config.toolConfig = {
-            retrievalConfig: {
-                latLng: {
-                    latitude: userLocation.lat,
-                    longitude: userLocation.lng
-                }
-            }
-        };
+    const result = await response.json();
+    
+    if (!response.ok) {
+        throw new Error(result.msg || 'Maps enrichment failed.');
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Find "${query}". Provide the address, rating, and a brief review snippet if available.`,
-      config: config
-    });
-
-    const text = response.text || "";
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    
-    // Maps grounding chunks structure
-    const links: { title: string; url: string }[] = [];
-    chunks.forEach((c: any) => {
-        if (c.maps?.uri) {
-            links.push({ title: c.maps.title || 'Google Maps', url: c.maps.uri });
-        }
-    });
-
-    return { text, links };
+    return result.data;
   } catch (e) {
     console.error("Maps Grounding Error", e);
     throw e;
@@ -156,4 +99,4 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
     };
     reader.onerror = reject;
   });
-};
+};
